@@ -533,6 +533,7 @@
         var editingStudentId = null;
         var currentTeacherFilter = 'all';
         var currentStatusFilter = 'all';
+        var currentSearchKeyword = '';
         var deleteTarget = { type: null, id: null };
         var selectedStudents = [];
 
@@ -752,6 +753,7 @@
         function resetMyStudentsFilter() {
             currentEnrollmentFilter = '';
             currentContractFilter = 'all';
+            currentSearchKeyword = '';
             currentPageNum = 1;
             renderPage();
         }
@@ -1326,6 +1328,10 @@
             html += '<div class="flex flex-wrap items-center gap-4">';
             html += '<div class="flex items-center gap-2"><i class="fas fa-filter"></i><span class="font-medium">筛选：</span></div>';
 
+            html += '<div class="flex items-center gap-2">';
+            html += '<input type="text" id="searchKeyword" placeholder="输入学生姓名搜索" value="' + currentSearchKeyword + '" oninput="searchStudents(this.value)" class="px-4 py-2 rounded-lg text-gray-800 font-medium w-48">';
+            html += '</div>';
+
             html += '<select id="teacherFilter" onchange="filterByTeacher(this.value)" class="px-4 py-2 rounded-lg text-gray-800 font-medium">';
             html += '<option value="all">全部老师</option>';
             teachers.forEach(t => {
@@ -1377,7 +1383,8 @@
             var filteredStudents = students.filter(s => {
                 var matchTeacher = currentTeacherFilter === 'all' || s.teacherId == currentTeacherFilter;
                 var matchStatus = currentStatusFilter === 'all' || s.status === currentStatusFilter;
-                return matchTeacher && matchStatus;
+                var matchSearch = !currentSearchKeyword || s.name.toLowerCase().includes(currentSearchKeyword.toLowerCase());
+                return matchTeacher && matchStatus && matchSearch;
             });
 
             html += '<div class="bg-white rounded-xl shadow-sm overflow-hidden">';
@@ -1386,7 +1393,11 @@
             html += '<span class="text-sm text-gray-500">共 ' + filteredStudents.length + ' 名学生</span>';
             html += '</div>';
 
-            html += '<table class="w-full text-sm"><thead class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white"><tr>';
+            if (filteredStudents.length === 0) {
+                var emptyMessage = currentSearchKeyword ? '未找到匹配的学生' : '暂无学生';
+                html += '<div class="p-8 text-center text-gray-500"><i class="fas fa-inbox text-4xl mb-3 text-gray-300"></i><p>' + emptyMessage + '</p></div>';
+            } else {
+                html += '<table class="w-full text-sm"><thead class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white"><tr>';
             html += '<th class="px-2 py-3 text-center checkbox-col"><input type="checkbox" onclick="toggleSelectAll(this)" class="rounded"></th>';
             html += '<th class="px-4 py-3 text-left font-medium">姓名</th>';
             html += '<th class="px-4 py-3 text-left font-medium">类型</th>';
@@ -1434,6 +1445,7 @@
             html += '</tbody></table>';
             html += renderPagination(filteredStudents.length);
             html += '</div></div>';
+            }
 
             return html;
         }
@@ -1444,7 +1456,8 @@
             var filteredStudents = students.filter(s => {
                 var matchTeacher = currentTeacherFilter === 'all' || s.teacherId == currentTeacherFilter;
                 var matchStatus = currentStatusFilter === 'all' || s.status === currentStatusFilter;
-                return matchTeacher && matchStatus;
+                var matchSearch = !currentSearchKeyword || s.name.toLowerCase().includes(currentSearchKeyword.toLowerCase());
+                return matchTeacher && matchStatus && matchSearch;
             });
 
             if (checkbox.checked) {
@@ -1549,12 +1562,21 @@
             renderPage();
         }
 
+        function searchStudents(keyword) {
+            currentSearchKeyword = keyword.trim();
+            currentPageNum = 1;
+            renderPage();
+        }
+
         // ==================== 我的学生（老师视角）- 包含新功能 ====================
 
         function renderMyStudents() {
             var myStudents = students.filter(s => s.teacherId === currentUser.teacherId);
             
             // 应用筛选
+            if (currentSearchKeyword) {
+                myStudents = myStudents.filter(s => s.name.toLowerCase().includes(currentSearchKeyword.toLowerCase()));
+            }
             if (currentEnrollmentFilter) {
                 myStudents = myStudents.filter(s => {
                     if (!s.planning || !s.planning.enrollmentDate) return false;
@@ -1581,6 +1603,11 @@
             html += '<div class="flex flex-wrap items-center gap-4">';
             html += '<div class="flex items-center gap-2"><i class="fas fa-filter text-indigo-600"></i><span class="font-medium">筛选：</span></div>';
             
+            // 搜索框
+            html += '<div class="flex items-center gap-2">';
+            html += '<input type="text" id="searchKeyword" placeholder="输入学生姓名搜索" value="' + currentSearchKeyword + '" oninput="searchStudents(this.value)" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 w-48">';
+            html += '</div>';
+            
             // 入学时间筛选
             html += '<div class="flex items-center gap-2">';
             html += '<label class="text-sm text-gray-600">入学时间：</label>';
@@ -1599,7 +1626,7 @@
             html += '</div>';
             
             // 重置筛选按钮
-            if (currentEnrollmentFilter || currentContractFilter !== 'all') {
+            if (currentEnrollmentFilter || currentContractFilter !== 'all' || currentSearchKeyword) {
                 html += '<button onclick="resetMyStudentsFilter()" class="px-3 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm">';
                 html += '<i class="fas fa-undo mr-1"></i>重置筛选';
                 html += '</button>';
@@ -1622,7 +1649,8 @@
             html += '</div>';
 
             if (myStudents.length === 0) {
-                html += '<div class="p-8 text-center text-gray-500"><i class="fas fa-inbox text-4xl mb-3 text-gray-300"></i><p>暂无学生</p></div>';
+                var emptyMessage = currentSearchKeyword ? '未找到匹配的学生' : '暂无学生';
+                html += '<div class="p-8 text-center text-gray-500"><i class="fas fa-inbox text-4xl mb-3 text-gray-300"></i><p>' + emptyMessage + '</p></div>';
             } else {
                 html += '<table class="w-full text-sm"><thead class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white"><tr>';
                 html += '<th class="px-4 py-3 text-left font-medium">姓名</th>';
