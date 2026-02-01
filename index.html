@@ -549,7 +549,7 @@
         var types = ['本科生', '研究生'];
         var contractTypes = ['高端A', '高端B', '高端C', '研究型硕士', '博士', '普通合同'];
         var degrees = ['硕士', '博士'];
-        var statuses = ['规划中', '申请中', '已录取'];
+        var statuses = ['规划中', '申请中', '已录取', '已退回'];
         var countries = ['美国', '英国', '加拿大', '澳大利亚', '新加坡', '香港'];
 
         // 绩效数据存储
@@ -597,6 +597,34 @@
         var currentContractFilter = 'all';
 
         function initData() {
+            var savedUsers = localStorage.getItem('system_users');
+            var savedTeachers = localStorage.getItem('system_teachers');
+            var savedStudents = localStorage.getItem('system_students');
+
+            if (savedUsers) {
+                try {
+                    users = JSON.parse(savedUsers);
+                } catch (e) {
+                    console.error('加载用户数据失败:', e);
+                }
+            }
+
+            if (savedTeachers) {
+                try {
+                    teachers = JSON.parse(savedTeachers);
+                } catch (e) {
+                    console.error('加载老师数据失败:', e);
+                }
+            }
+
+            if (savedStudents) {
+                try {
+                    students = JSON.parse(savedStudents);
+                } catch (e) {
+                    console.error('加载学生数据失败:', e);
+                }
+            }
+
             if (students.length === 0) {
                 for (var i = 1; i <= 25; i++) {
                     var teacherId = (i % 4) + 1;
@@ -642,7 +670,18 @@
                         }
                     });
                 }
-                updateTeacherStats();
+                saveData();
+            }
+            updateTeacherStats();
+        }
+
+        function saveData() {
+            try {
+                localStorage.setItem('system_users', JSON.stringify(users));
+                localStorage.setItem('system_teachers', JSON.stringify(teachers));
+                localStorage.setItem('system_students', JSON.stringify(students));
+            } catch (e) {
+                console.error('保存数据失败:', e);
             }
         }
 
@@ -1104,6 +1143,7 @@
 
             form.reset();
             updateTeacherStats();
+            saveData();
             renderPage();
             showToast('添加成功');
         }
@@ -1178,6 +1218,7 @@
                         });
                         
                         updateTeacherStats();
+                        saveData();
                         renderPage();
                         showToast('成功导入 ' + successCount + ' 名学生');
                     } else {
@@ -1316,7 +1357,7 @@
             var pageData = filteredStudents.slice(start, end);
 
             pageData.forEach(s => {
-                var statusColor = s.status === '规划中' ? 'bg-yellow-100 text-yellow-800' : s.status === '申请中' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800';
+                var statusColor = s.status === '规划中' ? 'bg-yellow-100 text-yellow-800' : s.status === '申请中' ? 'bg-blue-100 text-blue-800' : s.status === '已录取' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
                 var typeColor = s.type === '本科生' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
                 var isSelected = selectedStudents.includes(s.id);
                 
@@ -1329,7 +1370,7 @@
                 html += '<td class="px-4 py-3"><span class="' + typeColor + ' px-2 py-1 rounded text-xs font-medium">' + s.type + '</span></td>';
                 html += '<td class="px-4 py-3 text-gray-600">' + s.school + '</td>';
                 html += '<td class="px-4 py-3 text-gray-600">' + s.major + '</td>';
-                html += '<td class="px-4 py-3"><span class="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-medium">' + s.teacherName + '</span></td>';
+                html += '<td class="px-4 py-3"><span class="bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-medium">' + (s.teacherName || '未分配') + '</span></td>';
                 html += '<td class="px-4 py-3 font-medium text-indigo-600">' + s.gpa + '</td>';
                 html += '<td class="px-4 py-3"><span class="' + statusColor + ' px-2 py-1 rounded text-xs font-medium">' + s.status + '</span></td>';
                 html += '<td class="px-4 py-3 text-gray-600">' + (s.contractType || '-') + '</td>';
@@ -1414,6 +1455,7 @@
             });
 
             updateTeacherStats();
+            saveData();
             selectedStudents = [];
             closeBatchAssign();
             renderPage();
@@ -1446,6 +1488,7 @@
             });
 
             updateTeacherStats();
+            saveData();
             selectedStudents = [];
             closeBatchDelete();
             renderPage();
@@ -1550,7 +1593,7 @@
                 var pageData = myStudents.slice(start, end);
 
                 pageData.forEach(s => {
-                    var statusColor = s.status === '规划中' ? 'bg-yellow-100 text-yellow-800' : s.status === '申请中' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800';
+                    var statusColor = s.status === '规划中' ? 'bg-yellow-100 text-yellow-800' : s.status === '申请中' ? 'bg-blue-100 text-blue-800' : s.status === '已录取' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
                     var typeColor = s.type === '本科生' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700';
                     
                     // 计算规划课数量
@@ -1569,6 +1612,7 @@
                     html += '<td class="px-4 py-3"><div class="flex gap-2">';
                     html += '<button onclick="openEditExport(' + s.id + ')" class="px-3 py-1 bg-indigo-500 text-white rounded text-xs hover:bg-indigo-600">编辑并导出</button>';
                     html += '<button onclick="openPlanning(' + s.id + ')" class="px-3 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600">规划</button>';
+                    html += '<button onclick="returnStudent(' + s.id + ')" class="px-3 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600">退回</button>';
                     html += '</div></td>';
                     html += '</tr>';
                 });
@@ -1579,6 +1623,29 @@
             html += '</div></div>';
 
             return html;
+        }
+
+        function returnStudent(studentId) {
+            var s = students.find(st => st.id === studentId);
+            if (!s) return;
+
+            if (s.teacherId !== currentUser.teacherId) {
+                showToast('您没有权限退回此学生', 'error');
+                return;
+            }
+
+            if (!confirm('确定要将学生 "' + s.name + '" 退回给管理者吗？退回后学生状态将更新为"已退回"。')) {
+                return;
+            }
+
+            s.status = '已退回';
+            s.teacherId = null;
+            s.teacherName = '';
+            s.updatedAt = new Date().toISOString().split('T')[0];
+
+            saveData();
+            renderPage();
+            showToast('学生 "' + s.name + '" 已退回给管理者');
         }
 
 
@@ -2559,6 +2626,7 @@
 
             s.updatedAt = new Date().toISOString().split('T')[0];
             updateTeacherStats();
+            saveData();
             showToast('规划保存成功');
         }
 
@@ -2639,6 +2707,7 @@
 
             s.updatedAt = new Date().toISOString().split('T')[0];
             updateTeacherStats();
+            saveData();
             renderPage();
             showToast('规划保存成功');
             
@@ -3305,6 +3374,7 @@
 
             students.push(newStudent);
             updateTeacherStats();
+            saveData();
             form.reset();
             renderPage();
             showToast('成功添加学生');
@@ -3370,6 +3440,7 @@
             s.updatedAt = new Date().toISOString().split('T')[0];
 
             closeModal();
+            saveData();
             renderPage();
             showToast('保存成功');
         }
@@ -3413,6 +3484,7 @@
                     teachers.splice(teacherIndex, 1);
                     users = users.filter(u => !(u.role === 'teacher' && u.teacherId === deleteTarget.id));
                     updateTeacherStats();
+                    saveData();
                     showToast('已删除老师 "' + teacherName + '"');
                 }
             } else {
@@ -3421,6 +3493,7 @@
                     var studentName = students[studentIndex].name;
                     students.splice(studentIndex, 1);
                     updateTeacherStats();
+                    saveData();
                     showToast('已删除学生 "' + studentName + '"');
                 }
             }
