@@ -1016,6 +1016,54 @@
             });
             html += '</div></div>';
 
+            html += '<div class="bg-white p-5 rounded-xl shadow-sm mb-6">';
+            html += '<div class="flex justify-between items-center mb-4"><h3 class="font-bold text-lg flex items-center gap-2"><i class="fas fa-calendar-alt text-indigo-500"></i>入学时间统计</h3></div>';
+            
+            var enrollmentStats = {};
+            myStudents.forEach(s => {
+                if (s.planning && s.planning.enrollmentDate) {
+                    var yearMonth = s.planning.enrollmentDate.substring(0, 7);
+                    enrollmentStats[yearMonth] = (enrollmentStats[yearMonth] || 0) + 1;
+                }
+            });
+            
+            var sortedEnrollmentMonths = Object.keys(enrollmentStats).sort();
+            if (sortedEnrollmentMonths.length === 0) {
+                html += '<div class="text-center text-gray-500 py-8"><i class="fas fa-calendar-times text-4xl mb-3 text-gray-300"></i><p>暂无入学时间数据</p></div>';
+            } else {
+                html += '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">';
+                sortedEnrollmentMonths.forEach(ym => {
+                    var count = enrollmentStats[ym];
+                    var year = ym.substring(0, 4);
+                    var month = ym.substring(5, 7);
+                    var monthNames = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+                    var monthIndex = parseInt(month) - 1;
+                    var monthName = monthNames[monthIndex];
+                    var colors = [
+                        'from-blue-500 to-blue-600',
+                        'from-purple-500 to-purple-600',
+                        'from-pink-500 to-pink-600',
+                        'from-indigo-500 to-indigo-600',
+                        'from-cyan-500 to-cyan-600',
+                        'from-teal-500 to-teal-600',
+                        'from-green-500 to-green-600',
+                        'from-emerald-500 to-emerald-600',
+                        'from-yellow-500 to-yellow-600',
+                        'from-orange-500 to-orange-600',
+                        'from-red-500 to-red-600',
+                        'from-rose-500 to-rose-600'
+                    ];
+                    var colorClass = colors[monthIndex % 12];
+                    html += '<div class="p-4 bg-gradient-to-br ' + colorClass + ' rounded-lg text-white">';
+                    html += '<div class="text-3xl font-bold mb-1">' + count + '</div>';
+                    html += '<div class="text-sm opacity-90">' + year + '年' + month + '月</div>';
+                    html += '<div class="text-xs mt-2 opacity-75">入学人数</div>';
+                    html += '</div>';
+                });
+                html += '</div>';
+            }
+            html += '</div>';
+
             html += '<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">';
             if (isManager) {
                 html += '<div class="bg-white p-5 rounded-xl shadow-sm card-hover border-l-4 border-indigo-500"><div class="text-2xl font-bold text-indigo-600">' + teachers.length + '</div><div class="text-sm text-gray-500 mt-1">老师总数</div></div>';
