@@ -658,7 +658,7 @@
         }
 
         // 保存数据到云端
-        async function saveDataToCloud() {
+        async function saveDataToCloud(dataType, dataId) {
             if (!currentUser || !currentUser.uid) {
                 console.log('未登录，跳过云端保存');
                 return;
@@ -667,19 +667,40 @@
             try {
                 console.log('开始保存数据到云端...');
 
-                // 保存老师列表
-                for (const teacher of teachers) {
-                    await db.collection('teachers').doc(String(teacher.id)).set(teacher);
-                }
+                // 如果指定了数据类型和ID，只保存该条数据
+                if (dataType && dataId) {
+                    if (dataType === 'student') {
+                        var student = students.find(s => s.id === dataId);
+                        if (student) {
+                            await db.collection('students').doc(String(dataId)).set(student);
+                            console.log('学生数据保存成功:', dataId);
+                        }
+                    } else if (dataType === 'teacher') {
+                        var teacher = teachers.find(t => t.id === dataId);
+                        if (teacher) {
+                            await db.collection('teachers').doc(String(dataId)).set(teacher);
+                            console.log('老师数据保存成功:', dataId);
+                        }
+                    } else if (dataType === 'performance') {
+                        var perf = performanceData.find(p => p.id === dataId);
+                        if (perf) {
+                            await db.collection('performance').doc(String(dataId)).set(perf);
+                            console.log('绩效数据保存成功:', dataId);
+                        }
+                    }
+                } else {
+                    // 未指定类型和ID，保存所有数据（用于初始化等场景）
+                    for (const teacher of teachers) {
+                        await db.collection('teachers').doc(String(teacher.id)).set(teacher);
+                    }
 
-                // 保存学生列表
-                for (const student of students) {
-                    await db.collection('students').doc(String(student.id)).set(student);
-                }
+                    for (const student of students) {
+                        await db.collection('students').doc(String(student.id)).set(student);
+                    }
 
-                // 保存绩效数据
-                for (const perf of performanceData) {
-                    await db.collection('performance').doc(perf.id || Date.now().toString()).set(perf);
+                    for (const perf of performanceData) {
+                        await db.collection('performance').doc(perf.id || Date.now().toString()).set(perf);
+                    }
                 }
 
                 console.log('数据保存到云端成功');
@@ -794,10 +815,10 @@
             console.log('初始化数据，等待从 Firestore 加载...');
         }
 
-        function saveData() {
+        function saveData(dataType, dataId) {
             try {
                 // 只保存到 Firestore，不再使用 localStorage
-                saveDataToCloud();
+                saveDataToCloud(dataType, dataId);
             } catch (e) {
                 console.error('保存数据失败:', e);
             }
@@ -806,6 +827,11 @@
         function updateTeacherStats() {
             teachers.forEach(teacher => {
                 teacher.students = students.filter(s => s.teacherId === teacher.id).length;
+            });
+            
+            // 保存老师统计数据到云端
+            teachers.forEach(teacher => {
+                saveData('teacher', teacher.id);
             });
         }
 
@@ -1431,11 +1457,11 @@
                                 }
                             };
                             students.push(newStudent);
+                            saveData('student', newStudent.id);
                             successCount++;
                         });
                         
                         updateTeacherStats();
-                        saveData();
                         renderPage();
                         showToast('成功导入 ' + successCount + ' 名学生');
                     } else {
@@ -1603,6 +1629,7 @@
                 html += '<td class="px-4 py-3 text-center"><span class="' + courseBadgeClass + ' px-2 py-1 rounded text-xs font-medium">' + courseCount + '</span></td>';
                 html += '<td class="px-4 py-3"><div class="flex gap-2">';
                 html += '<button onclick="editStudent(' + s.id + ')" class="px-3 py-1 bg-indigo-500 text-white rounded text-xs hover:bg-indigo-600">编辑</button>';
+                html += '<button onclick="openEditExport(' + s.id + ')" class="px-3 py-1 bg-purple-500 text-white rounded text-xs hover:bg-purple-600">编辑并导出</button>';
                 html += '<button onclick="studentPlanning(' + s.id + ')" class="px-3 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600">规划</button>';
                 html += '<button onclick="showDeleteConfirm(\'student\', ' + s.id + ')" class="px-3 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600">删除</button>';
                 html += '</div></td>';
@@ -1678,12 +1705,13 @@
                 if (s) {
                     s.teacherId = teacherId;
                     s.teacherName = teacher.name;
+                    s.updatedAt = new Date().toISOString().split('T')[0];
+                    saveData('student', id);
                     count++;
                 }
             });
 
             updateTeacherStats();
-            saveData();
             selectedStudents = [];
             closeBatchAssign();
             renderPage();
@@ -1716,7 +1744,6 @@
             });
 
             updateTeacherStats();
-            saveData();
             
             // 同时从 Firestore 删除这些学生（等待所有删除完成）
             var deletePromises = selectedStudents.map(id => deleteFromFirestore('students', id));
@@ -1891,7 +1918,7 @@
             s.teacherName = '';
             s.updatedAt = new Date().toISOString().split('T')[0];
 
-            saveData();
+            saveData('student', s.id);
             renderPage();
             showToast('学生 "' + s.name + '" 已退回给管理者');
         }
@@ -2035,7 +2062,7 @@
             html += '<button type="button" onclick="applyFontColorToElement(\'otherEditor\', \'red\')" title="红色" style="color: #dc2626;">A</button>';
             html += '<button type="button" onclick="applyFontColorToElement(\'otherEditor\', \'yellow\')" title="黄色" style="color: #eab308;">A</button>';
             html += '<button type="button" onclick="applyStyleToElement(\'otherEditor\', \'removeFormat\')" title="清除格式"><i class="fas fa-eraser"></i></button>';
-            html += '</div><div id="otherEditor" class="rich-text-editor" contenteditable="true">' + (s.planning && s.planning.otherContent ? s.planning.otherContent : '') + '</div></div></div>';
+            html += '</div><div id="otherEditor" class="rich-text-editor" contenteditable="true">' + (s.planning && s.planning.exportOtherContent ? s.planning.exportOtherContent : '') + '</div></div></div>';
 
             // 上传截图
             html += '<div class="form-section">';
@@ -2127,7 +2154,7 @@
             if (visitEditor) s.details.visit = visitEditor.innerHTML;
             if (otherEditor) {
                 if (!s.planning) s.planning = {};
-                s.planning.otherContent = otherEditor.innerHTML;
+                s.planning.exportOtherContent = otherEditor.innerHTML;
             }
             if (newOrientEditor) {
                 if (!s.planning) s.planning = {};
@@ -2146,6 +2173,7 @@
 
             s.updatedAt = new Date().toISOString().split('T')[0];
 
+            saveData('student', editingStudentId);
             closeModal();
             generateExportPreview(s);
             showToast('保存成功，正在生成预览...');
@@ -2155,86 +2183,86 @@
             var now = new Date();
             var yearMonth = now.getFullYear() + '年' + String(now.getMonth() + 1).padStart(2, '0') + '月';
 
-            var html = '<div style="font-family: Arial, \'SimSun\', sans-serif; padding: 30px; color: #000; line-height: 1.6; background: white;">';
-            html += '<div style="text-align: center; border-bottom: 3px solid #667eea; padding-bottom: 15px; margin-bottom: 25px;">';
-            html += '<h2 style="margin: 0; font-size: 22px; color: #333;">学生规划档案</h2>';
-            html += '<p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">生成时间：' + yearMonth + '</p>';
+            var html = '<div style="font-family: \'Microsoft YaHei\', \'微软雅黑\', \'SimSun\', \'宋体\', sans-serif; padding: 40px; color: #000; line-height: 1.8; background: white; min-width: 800px;">';
+            html += '<div style="text-align: center; border-bottom: 3px solid #667eea; padding-bottom: 20px; margin-bottom: 30px;">';
+            html += '<h2 style="margin: 0; font-size: 24px; color: #333; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">学生规划档案</h2>';
+            html += '<p style="margin: 10px 0 0 0; font-size: 14px; color: #666;">生成时间：' + yearMonth + '</p>';
             html += '</div>';
 
             // 服务开始时间
             if (student.planning && student.planning.serviceStartDate) {
-                html += '<div style="margin-bottom: 25px; background: #e0e7ff; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">';
-                html += '<h3 style="color: #4338ca; margin: 0 0 5px 0; font-size: 14px; font-weight: bold;">服务开始时间</h3>';
-                html += '<p style="margin: 0; font-size: 16px; color: #1e1b4b; font-weight: bold;">' + student.planning.serviceStartDate + '</p>';
+                html += '<div style="margin-bottom: 30px; background: #e0e7ff; padding: 18px; border-radius: 8px; border-left: 4px solid #667eea;">';
+                html += '<h3 style="color: #4338ca; margin: 0 0 8px 0; font-size: 15px; font-weight: bold; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">服务开始时间</h3>';
+                html += '<p style="margin: 0; font-size: 18px; color: #1e1b4b; font-weight: bold; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">' + student.planning.serviceStartDate + '</p>';
                 html += '</div>';
             }
 
             // 基本信息
-            html += '<div style="margin-bottom: 25px;">';
-            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 10px; font-size: 16px;">基本信息</h3>';
-            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;">';
-            html += '<tr style="background: #f9fafb;"><td style="padding: 8px; border: 1px solid #e5e7eb; width: 100px; font-weight: bold;">姓名</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + student.name + '</td><td style="padding: 8px; border: 1px solid #e5e7eb; width: 100px; font-weight: bold;">状态</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + student.status + '</td></tr>';
-            html += '<tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold;">学校</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + student.school + '</td><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold;">专业</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + student.major + '</td></tr>';
-            html += '<tr style="background: #f9fafb;"><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold;">GPA</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + student.gpa + '</td><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold;">入学日期</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + (student.planning && student.planning.enrollmentDate ? student.planning.enrollmentDate : '-') + '</td></tr>';
+            html += '<div style="margin-bottom: 30px; page-break-inside: avoid;">';
+            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 12px; font-size: 18px; margin-bottom: 15px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">基本信息</h3>';
+            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">';
+            html += '<tr style="background: #f9fafb; height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb; width: 120px; font-weight: bold;">姓名</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + student.name + '</td><td style="padding: 12px; border: 1px solid #e5e7eb; width: 120px; font-weight: bold;">状态</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + student.status + '</td></tr>';
+            html += '<tr style="height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">学校</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + student.school + '</td><td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">专业</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + student.major + '</td></tr>';
+            html += '<tr style="background: #f9fafb; height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">GPA</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + student.gpa + '</td><td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">入学日期</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + (student.planning && student.planning.enrollmentDate ? student.planning.enrollmentDate : '-') + '</td></tr>';
             html += '</table></div>';
 
             // 顾问团队
-            html += '<div style="margin-bottom: 25px;">';
-            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 10px; font-size: 16px;">顾问团队</h3>';
-            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;">';
-            html += '<tr style="background: #f9fafb;"><td style="padding: 8px; border: 1px solid #e5e7eb; width: 120px; font-weight: bold;">前期顾问</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + (student.details && student.details.earlyConsultant ? student.details.earlyConsultant : '-') + '</td></tr>';
-            html += '<tr><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold;">中期顾问</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + student.teacherName + '</td></tr>';
-            html += '<tr style="background: #f9fafb;"><td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold;">后期顾问</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + (student.details && student.details.lateConsultant ? student.details.lateConsultant : '-') + '</td></tr>';
+            html += '<div style="margin-bottom: 30px; page-break-inside: avoid;">';
+            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 12px; font-size: 18px; margin-bottom: 15px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">顾问团队</h3>';
+            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">';
+            html += '<tr style="background: #f9fafb; height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb; width: 140px; font-weight: bold;">前期顾问</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + (student.details && student.details.earlyConsultant ? student.details.earlyConsultant : '-') + '</td></tr>';
+            html += '<tr style="height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">中期顾问</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + student.teacherName + '</td></tr>';
+            html += '<tr style="background: #f9fafb; height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">后期顾问</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + (student.details && student.details.lateConsultant ? student.details.lateConsultant : '-') + '</td></tr>';
             html += '</table></div>';
 
             // 语言成绩
-            html += '<div style="margin-bottom: 25px;">';
-            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 10px; font-size: 16px;">语言成绩</h3>';
-            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;">';
-            html += '<tr style="background: #f9fafb;"><td style="padding: 8px; border: 1px solid #e5e7eb;">雅思</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + (student.details && student.details.ielts ? student.details.ielts : '-') + '</td><td style="padding: 8px; border: 1px solid #e5e7eb;">托福</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + (student.details && student.details.toefl ? student.details.toefl : '-') + '</td></tr>';
-            html += '<tr><td style="padding: 8px; border: 1px solid #e5e7eb;">GRE</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + (student.details && student.details.gre ? student.details.gre : '-') + '</td><td style="padding: 8px; border: 1px solid #e5e7eb;">GMAT</td><td style="padding: 8px; border: 1px solid #e5e7eb;">' + (student.details && student.details.gmat ? student.details.gmat : '-') + '</td></tr>';
+            html += '<div style="margin-bottom: 30px; page-break-inside: avoid;">';
+            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 12px; font-size: 18px; margin-bottom: 15px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">语言成绩</h3>';
+            html += '<table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">';
+            html += '<tr style="background: #f9fafb; height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb;">雅思</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + (student.details && student.details.ielts ? student.details.ielts : '-') + '</td><td style="padding: 12px; border: 1px solid #e5e7eb;">托福</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + (student.details && student.details.toefl ? student.details.toefl : '-') + '</td></tr>';
+            html += '<tr style="height: 40px;"><td style="padding: 12px; border: 1px solid #e5e7eb;">GRE</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + (student.details && student.details.gre ? student.details.gre : '-') + '</td><td style="padding: 12px; border: 1px solid #e5e7eb;">GMAT</td><td style="padding: 12px; border: 1px solid #e5e7eb;">' + (student.details && student.details.gmat ? student.details.gmat : '-') + '</td></tr>';
             html += '</table></div>';
 
             // 背景经历
-            html += '<div style="margin-bottom: 25px;">';
-            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 10px; font-size: 16px;">背景经历</h3>';
-            html += '<div style="margin-top: 10px;">';
-            html += '<div style="background: #f9fafb; padding: 10px; margin-bottom: 8px; border-left: 3px solid #ddd; font-size: 13px;"><strong>竞赛：</strong><div>' + (student.details && student.details.competition ? student.details.competition : '<span style="color: #999;">无</span>') + '</div></div>';
-            html += '<div style="background: #f9fafb; padding: 10px; margin-bottom: 8px; border-left: 3px solid #ddd; font-size: 13px;"><strong>科研：</strong><div>' + (student.details && student.details.research ? student.details.research : '<span style="color: #999;">无</span>') + '</div></div>';
-            html += '<div style="background: #f9fafb; padding: 10px; margin-bottom: 8px; border-left: 3px solid #ddd; font-size: 13px;"><strong>实习：</strong><div>' + (student.details && student.details.internship ? student.details.internship : '<span style="color: #999;">无</span>') + '</div></div>';
-            html += '<div style="background: #f9fafb; padding: 10px; border-left: 3px solid #ddd; font-size: 13px;"><strong>访学：</strong><div>' + (student.details && student.details.visit ? student.details.visit : '<span style="color: #999;">无</span>') + '</div></div>';
+            html += '<div style="margin-bottom: 30px; page-break-inside: avoid;">';
+            html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 12px; font-size: 18px; margin-bottom: 15px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">背景经历</h3>';
+            html += '<div style="margin-top: 15px;">';
+            html += '<div style="background: #f9fafb; padding: 15px; margin-bottom: 12px; border-left: 3px solid #667eea; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;"><strong>竞赛：</strong><div style="margin-top: 8px;">' + (student.details && student.details.competition ? student.details.competition : '<span style="color: #999;">无</span>') + '</div></div>';
+            html += '<div style="background: #f9fafb; padding: 15px; margin-bottom: 12px; border-left: 3px solid #667eea; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;"><strong>科研：</strong><div style="margin-top: 8px;">' + (student.details && student.details.research ? student.details.research : '<span style="color: #999;">无</span>') + '</div></div>';
+            html += '<div style="background: #f9fafb; padding: 15px; margin-bottom: 12px; border-left: 3px solid #667eea; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;"><strong>实习：</strong><div style="margin-top: 8px;">' + (student.details && student.details.internship ? student.details.internship : '<span style="color: #999;">无</span>') + '</div></div>';
+            html += '<div style="background: #f9fafb; padding: 15px; border-left: 3px solid #667eea; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;"><strong>访学：</strong><div style="margin-top: 8px;">' + (student.details && student.details.visit ? student.details.visit : '<span style="color: #999;">无</span>') + '</div></div>';
             html += '</div></div>';
 
             // 新东方产品购买
             if (student.planning && student.planning.newOrientExport !== false && student.planning.newOrientContent) {
-                html += '<div style="margin-bottom: 25px;">';
-                html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 10px; font-size: 16px;">新东方产品购买</h3>';
-                html += '<div style="background: #f9fafb; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 13px;">';
+                html += '<div style="margin-bottom: 30px; page-break-inside: avoid;">';
+                html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 12px; font-size: 18px; margin-bottom: 15px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">新东方产品购买</h3>';
+                html += '<div style="background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif; line-height: 1.8;">';
                 html += student.planning.newOrientContent;
                 html += '</div></div>';
             }
 
             // 其他
-            if (student.planning && student.planning.otherContent) {
-                html += '<div style="margin-bottom: 25px;">';
-                html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 10px; font-size: 16px;">其他</h3>';
-                html += '<div style="background: #f9fafb; padding: 12px; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 13px;">';
-                html += student.planning.otherContent;
+            if (student.planning && student.planning.exportOtherContent) {
+                html += '<div style="margin-bottom: 30px; page-break-inside: avoid;">';
+                html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 12px; font-size: 18px; margin-bottom: 15px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">其他</h3>';
+                html += '<div style="background: #f9fafb; padding: 15px; border-radius: 6px; border: 1px solid #e5e7eb; font-size: 14px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif; line-height: 1.8;">';
+                html += student.planning.exportOtherContent;
                 html += '</div></div>';
             }
 
             // 相关截图
             if (student.planning && student.planning.images && student.planning.images.length > 0) {
-                html += '<div style="margin-bottom: 25px;">';
-                html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 10px; font-size: 16px;">相关截图</h3>';
-                html += '<div style="margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">';
+                html += '<div style="margin-bottom: 30px; page-break-inside: avoid;">';
+                html += '<h3 style="color: #667eea; border-left: 4px solid #667eea; padding-left: 12px; font-size: 18px; margin-bottom: 15px; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">相关截图</h3>';
+                html += '<div style="margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">';
                 student.planning.images.forEach(function(src) {
-                    html += '<img src="' + src + '" style="max-width: 100%; border: 1px solid #e5e7eb; border-radius: 4px;">';
+                    html += '<div style="border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;"><img src="' + src + '" style="width: 100%; height: auto; display: block;"></div>';
                 });
                 html += '</div></div>';
             }
 
-            html += '<div style="text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #999;">';
+            html += '<div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 13px; color: #999; font-family: \'Microsoft YaHei\', \'微软雅黑\', sans-serif;">';
             html += '<p>中期规划管理系统生成 | ' + now.getFullYear() + '</p>';
             html += '</div>';
             html += '</div>';
@@ -2331,7 +2359,8 @@
                     text: '学生规划档案',
                     heading: docx.HeadingLevel.HEADING_1,
                     alignment: docx.AlignmentType.CENTER,
-                    spacing: { after: 200 }
+                    spacing: { after: 200 },
+                    style: 'title'
                 }));
                 
                 docChildren.push(new docx.Paragraph({
@@ -2358,7 +2387,8 @@
                     var basicInfo = '姓名：' + student.name + '\n学校：' + student.school + '\n专业：' + student.major + '\nGPA：' + student.gpa + '\n状态：' + student.status;
                     docChildren.push(new docx.Paragraph({
                         text: basicInfo,
-                        spacing: { after: 100 }
+                        spacing: { after: 100 },
+                        spacing: { line: 360 }
                     }));
                     
                     if (student.details.earlyConsultant || student.details.lateConsultant) {
@@ -2371,7 +2401,8 @@
                         var consultantInfo = '前期顾问：' + (student.details.earlyConsultant || '-') + '\n中期顾问：' + student.teacherName + '\n后期顾问：' + (student.details.lateConsultant || '-');
                         docChildren.push(new docx.Paragraph({
                             text: consultantInfo,
-                            spacing: { after: 100 }
+                            spacing: { after: 100 },
+                            spacing: { line: 360 }
                         }));
                     }
                     
@@ -2385,7 +2416,8 @@
                         var languageInfo = '雅思：' + (student.details.ielts || '-') + '\n托福：' + (student.details.toefl || '-') + '\nGRE：' + (student.details.gre || '-') + '\nGMAT：' + (student.details.gmat || '-');
                         docChildren.push(new docx.Paragraph({
                             text: languageInfo,
-                            spacing: { after: 100 }
+                            spacing: { after: 100 },
+                            spacing: { line: 360 }
                         }));
                     }
                     
@@ -2399,25 +2431,29 @@
                         if (student.details.competition) {
                             docChildren.push(new docx.Paragraph({
                                 text: '竞赛：' + student.details.competition.replace(/<[^>]*>/g, ''),
-                                spacing: { after: 100 }
+                                spacing: { after: 100 },
+                                spacing: { line: 360 }
                             }));
                         }
                         if (student.details.research) {
                             docChildren.push(new docx.Paragraph({
                                 text: '科研：' + student.details.research.replace(/<[^>]*>/g, ''),
-                                spacing: { after: 100 }
+                                spacing: { after: 100 },
+                                spacing: { line: 360 }
                             }));
                         }
                         if (student.details.internship) {
                             docChildren.push(new docx.Paragraph({
                                 text: '实习：' + student.details.internship.replace(/<[^>]*>/g, ''),
-                                spacing: { after: 100 }
+                                spacing: { after: 100 },
+                                spacing: { line: 360 }
                             }));
                         }
                         if (student.details.visit) {
                             docChildren.push(new docx.Paragraph({
                                 text: '访学：' + student.details.visit.replace(/<[^>]*>/g, ''),
-                                spacing: { after: 100 }
+                                spacing: { after: 100 },
+                                spacing: { line: 360 }
                             }));
                         }
                     }
@@ -2432,7 +2468,8 @@
                     
                     docChildren.push(new docx.Paragraph({
                         text: student.planning.newOrientContent.replace(/<[^>]*>/g, ''),
-                        spacing: { after: 100 }
+                        spacing: { after: 100 },
+                        spacing: { line: 360 }
                     }));
                 }
                 
@@ -2445,11 +2482,12 @@
                     
                     docChildren.push(new docx.Paragraph({
                         text: student.planning.newOrientContent.replace(/<[^>]*>/g, ''),
-                        spacing: { after: 100 }
+                        spacing: { after: 100 },
+                        spacing: { line: 360 }
                     }));
                 }
                 
-                if (student.planning && student.planning.otherContent) {
+                if (student.planning && student.planning.exportOtherContent) {
                     docChildren.push(new docx.Paragraph({
                         text: '其他',
                         heading: docx.HeadingLevel.HEADING_2,
@@ -2457,8 +2495,9 @@
                     }));
                     
                     docChildren.push(new docx.Paragraph({
-                        text: student.planning.otherContent.replace(/<[^>]*>/g, ''),
-                        spacing: { after: 100 }
+                        text: student.planning.exportOtherContent.replace(/<[^>]*>/g, ''),
+                        spacing: { after: 100 },
+                        spacing: { line: 360 }
                     }));
                 }
                 
@@ -2470,6 +2509,7 @@
                 }));
                 
                 var doc = new docx.Document({
+                    styles: docx.Styles.parse('<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Microsoft YaHei" w:eastAsia="Microsoft YaHei" w:hAnsi="Microsoft YaHei"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>'),
                     sections: [{
                         properties: {},
                         children: docChildren
@@ -2874,7 +2914,7 @@
 
             s.updatedAt = new Date().toISOString().split('T')[0];
             updateTeacherStats();
-            saveData();
+            saveData('student', editingStudentId);
             showToast('规划保存成功');
         }
 
@@ -2955,7 +2995,7 @@
 
             s.updatedAt = new Date().toISOString().split('T')[0];
             updateTeacherStats();
-            saveData();
+            saveData('student', editingStudentId);
             renderPage();
             showToast('规划保存成功');
             
@@ -3708,7 +3748,7 @@
             s.updatedAt = new Date().toISOString().split('T')[0];
 
             closeModal();
-            saveData();
+            saveData('student', editingStudentId);
             renderPage();
             showToast('保存成功');
         }
@@ -3743,16 +3783,21 @@
                 var teacherIndex = teachers.findIndex(t => t.id === deleteTarget.id);
                 if (teacherIndex > -1) {
                     var teacherName = teachers[teacherIndex].name;
+                    var affectedStudentIds = [];
                     students.forEach(s => {
                         if (s.teacherId === deleteTarget.id) {
                             s.teacherId = 1;
                             s.teacherName = teachers[0].name;
+                            s.updatedAt = new Date().toISOString().split('T')[0];
+                            affectedStudentIds.push(s.id);
                         }
                     });
                     teachers.splice(teacherIndex, 1);
                     users = users.filter(u => !(u.role === 'teacher' && u.teacherId === deleteTarget.id));
                     updateTeacherStats();
-                    saveData();
+                    
+                    // 保存受影响的学生数据
+                    affectedStudentIds.forEach(id => saveData('student', id));
                     
                     // 同时删除 Firestore 中的老师文档
                     deleteFromFirestore('teachers', deleteTarget.id);
@@ -3765,7 +3810,6 @@
                     var studentName = students[studentIndex].name;
                     students.splice(studentIndex, 1);
                     updateTeacherStats();
-                    saveData();
                     
                     // 同时删除 Firestore 中的学生文档
                     deleteFromFirestore('students', deleteTarget.id);
