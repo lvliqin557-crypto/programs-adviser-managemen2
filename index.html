@@ -571,6 +571,7 @@
                             teacherId: userData.teacherId || null
                         };
                         currentRole = userData.role;
+                        console.log('当前角色:', currentRole, 'teacherId:', currentUser.teacherId);
                         
                         // 从云端加载数据
                         await loadDataFromCloud();
@@ -603,9 +604,19 @@
         // 从云端加载数据
         async function loadDataFromCloud() {
             try {
+                console.log('开始从云端加载数据...');
+                
                 // 加载老师列表
                 const teachersSnapshot = await db.collection('teachers').get();
-                teachers = teachersSnapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+                const cloudTeachers = teachersSnapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+                
+                // 如果云端有数据，使用云端数据；否则保留本地数据
+                if (cloudTeachers.length > 0) {
+                    teachers = cloudTeachers;
+                    console.log('从云端加载了', cloudTeachers.length, '个老师');
+                } else {
+                    console.log('云端没有老师数据，保留本地数据');
+                }
                 
                 // 加载学生列表（老师只能看自己的）
                 let studentsQuery = db.collection('students');
@@ -613,18 +624,36 @@
                     studentsQuery = studentsQuery.where('teacherId', '==', currentUser.teacherId);
                 }
                 const studentsSnapshot = await studentsQuery.get();
-                students = studentsSnapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+                const cloudStudents = studentsSnapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+                
+                // 如果云端有数据，使用云端数据；否则保留本地数据
+                if (cloudStudents.length > 0) {
+                    students = cloudStudents;
+                    console.log('从云端加载了', cloudStudents.length, '个学生');
+                } else {
+                    console.log('云端没有学生数据，保留本地数据');
+                }
                 
                 // 加载绩效数据
                 const perfSnapshot = await db.collection('performance').get();
-                performanceData = perfSnapshot.docs.map(doc => doc.data());
+                const cloudPerf = perfSnapshot.docs.map(doc => doc.data());
+                
+                // 如果云端有数据，使用云端数据；否则保留本地数据
+                if (cloudPerf.length > 0) {
+                    performanceData = cloudPerf;
+                    console.log('从云端加载了', cloudPerf.length, '条绩效数据');
+                } else {
+                    console.log('云端没有绩效数据，保留本地数据');
+                }
                 
                 updateTeacherStats();
                 renderSidebar();
                 renderPage();
+                console.log('云端数据加载完成');
             } catch (error) {
                 console.error('云端加载失败:', error);
                 showToast('数据同步失败', 'error');
+                // 加载失败时，保留本地数据
             }
         }
 
@@ -656,6 +685,23 @@
                 console.log('数据保存到云端成功');
             } catch (error) {
                 console.error('云端保存失败:', error);
+                // 不显示错误提示，避免频繁打扰用户
+            }
+        }
+
+        // 从 Firestore 删除文档
+        async function deleteFromFirestore(collectionName, id) {
+            if (!currentUser || !currentUser.uid) {
+                console.log('未登录，跳过 Firestore 删除');
+                return;
+            }
+
+            try {
+                console.log('从 Firestore 删除', collectionName, '文档:', id);
+                await db.collection(collectionName).doc(String(id)).delete();
+                console.log('Firestore 删除成功:', collectionName, id);
+            } catch (error) {
+                console.error('Firestore 删除失败:', error);
                 // 不显示错误提示，避免频繁打扰用户
             }
         }
@@ -743,91 +789,14 @@
         var currentContractFilter = 'all';
 
         function initData() {
-            var savedUsers = localStorage.getItem('system_users');
-            var savedTeachers = localStorage.getItem('system_teachers');
-            var savedStudents = localStorage.getItem('system_students');
-
-            if (savedUsers) {
-                try {
-                    users = JSON.parse(savedUsers);
-                } catch (e) {
-                    console.error('加载用户数据失败:', e);
-                }
-            }
-
-            if (savedTeachers) {
-                try {
-                    teachers = JSON.parse(savedTeachers);
-                } catch (e) {
-                    console.error('加载老师数据失败:', e);
-                }
-            }
-
-            if (savedStudents) {
-                try {
-                    students = JSON.parse(savedStudents);
-                } catch (e) {
-                    console.error('加载学生数据失败:', e);
-                }
-            }
-
-            if (students.length === 0) {
-                for (var i = 1; i <= 25; i++) {
-                    var teacherId = (i % 4) + 1;
-                    var teacher = teachers.find(t => t.id === teacherId);
-                    students.push({
-                        id: i,
-                        name: ['张三', '李四', '王五', '赵六', '陈七', '刘八', '周九', '吴十', '郑十一', '孙十二'][i % 10] + (i > 10 ? i : ''),
-                        type: types[i % 2],
-                        school: schools[i % 8],
-                        major: majors[i % 7],
-                        gpa: (3.0 + Math.random() * 1.0).toFixed(2),
-                        teacherId: teacherId,
-                        teacherName: teacher ? teacher.name : '未分配',
-                        status: statuses[i % 3],
-                        targetDegree: degrees[i % 2],
-                        contractType: contractTypes[i % 6],
-                        createdAt: '2024-01-' + (10 + i),
-                        updatedAt: '2024-01-' + (10 + i),
-                        details: {
-                            school: schools[i % 8],
-                            major: majors[i % 7],
-                            gpa: (3.0 + Math.random() * 1.0).toFixed(2),
-                            ielts: '', toefl: '', cet4: '', cet6: '', gre: '', gmat: '',
-                            competition: '', research: '', internship: '', visit: '',
-                            applicationSeason: '', earlyConsultant: '', lateConsultant: ''
-                        },
-                        planning: {
-                            courses: [],
-                            timeline: [],
-                            networkApplyStart: '',
-                            networkApplyEnd: '',
-                            plans: [],
-                            selectedItems: [],
-                            customFields: [],
-                            screenshots: [],
-                            serviceStartDate: '',
-                            enrollmentDate: '',
-                            timePeriods: [],
-                            images: [],
-                            otherContent: '',
-                            newOrientContent: '',
-                            newOrientExport: true
-                        }
-                    });
-                }
-                saveData();
-            }
-            updateTeacherStats();
+            // 不再从 localStorage 加载数据，改为从 Firestore 加载
+            // 只保留必要的初始化
+            console.log('初始化数据，等待从 Firestore 加载...');
         }
 
         function saveData() {
             try {
-                localStorage.setItem('system_users', JSON.stringify(users));
-                localStorage.setItem('system_teachers', JSON.stringify(teachers));
-                localStorage.setItem('system_students', JSON.stringify(students));
-                
-                // 同时保存到云端
+                // 只保存到 Firestore，不再使用 localStorage
                 saveDataToCloud();
             } catch (e) {
                 console.error('保存数据失败:', e);
@@ -1301,10 +1270,12 @@
             return html;
         }
 
-        function addTeacher(e) {
+        async function addTeacher(e) {
             e.preventDefault();
             var form = e.target;
             var username = form.username.value.trim();
+            var email = form.email.value.trim();
+            var password = form.password.value;
 
             if (users.find(u => u.username === username)) {
                 showToast('该账号已存在', 'error');
@@ -1317,7 +1288,7 @@
             var newTeacher = {
                 id: newTeacherId,
                 name: form.name.value,
-                email: form.email.value,
+                email: email,
                 username: username,
                 accountType: accountType,
                 students: 0,
@@ -1325,12 +1296,54 @@
                 createdAt: new Date().toISOString().split('T')[0]
             };
 
+            // 在 Firebase Authentication 中创建用户
+            try {
+                console.log('在 Firebase Authentication 中创建用户:', email);
+                var userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                console.log('Firebase 用户创建成功:', userCredential.user.uid);
+                
+                // 在 Firestore users 集合中保存用户信息
+                await db.collection('users').doc(userCredential.user.uid).set({
+                    uid: userCredential.user.uid,
+                    email: email,
+                    name: form.name.value,
+                    role: accountType === '系统管理员' ? 'manager' : 'teacher',
+                    teacherId: newTeacherId,
+                    accountType: accountType
+                });
+                console.log('用户信息已保存到 Firestore users 集合');
+                
+            } catch (error) {
+                console.error('创建 Firebase 用户失败:', error);
+                
+                if (error.code === 'auth/email-already-in-use') {
+                    showToast('该邮箱已被注册', 'error');
+                } else if (error.code === 'auth/invalid-email') {
+                    showToast('邮箱格式不正确', 'error');
+                } else if (error.code === 'auth/weak-password') {
+                    showToast('密码强度不够', 'error');
+                } else {
+                    showToast('创建用户失败: ' + error.message, 'error');
+                }
+                return;
+            }
+
+            // 直接保存到 Firestore teachers 集合
+            try {
+                await db.collection('teachers').doc(String(newTeacherId)).set(newTeacher);
+                console.log('老师已保存到 Firestore:', newTeacher.name);
+            } catch (error) {
+                console.error('保存老师到 Firestore 失败:', error);
+                showToast('保存失败，请检查网络连接', 'error');
+                return;
+            }
+
             teachers.push(newTeacher);
 
             users.push({
                 id: 't' + newTeacherId,
                 username: username,
-                password: form.password.value,
+                password: password,
                 role: accountType === '系统管理员' ? 'manager' : 'teacher',
                 name: form.name.value,
                 teacherId: newTeacherId,
@@ -1339,7 +1352,6 @@
 
             form.reset();
             updateTeacherStats();
-            saveData();
             renderPage();
             showToast('添加成功');
         }
@@ -1350,6 +1362,8 @@
             var file = input.files[0];
             if (!file) return;
 
+            console.log('开始导入Excel文件:', file.name);
+
             var reader = new FileReader();
             reader.onload = function(e) {
                 try {
@@ -1358,11 +1372,18 @@
                     var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                     var jsonData = XLSX.utils.sheet_to_json(firstSheet);
                     
+                    console.log('Excel数据解析成功，共', jsonData.length, '行');
+                    
                     if (jsonData.length > 0) {
                         var successCount = 0;
                         jsonData.forEach(row => {
                             var teacherName = row['中期顾问'] || row['负责老师'] || row['老师'] || '张老师';
-                            var teacher = teachers.find(t => t.name === teacherName) || teachers[0];
+                            var teacher = teachers.find(t => t.name === teacherName);
+                            
+                            if (!teacher) {
+                                console.warn('未找到老师:', teacherName, '，跳过该学生');
+                                return;
+                            }
                             
                             var newStudent = {
                                 id: students.length + 1,
@@ -1684,7 +1705,7 @@
             document.getElementById('batchDeleteModal').classList.add('hidden');
         }
 
-        function confirmBatchDelete() {
+        async function confirmBatchDelete() {
             var count = 0;
             selectedStudents.forEach(id => {
                 var index = students.findIndex(s => s.id === id);
@@ -1696,6 +1717,11 @@
 
             updateTeacherStats();
             saveData();
+            
+            // 同时从 Firestore 删除这些学生（等待所有删除完成）
+            var deletePromises = selectedStudents.map(id => deleteFromFirestore('students', id));
+            await Promise.all(deletePromises);
+            
             selectedStudents = [];
             closeBatchDelete();
             renderPage();
@@ -3411,7 +3437,7 @@
             return html;
         }
 
-        function savePerformance(e) {
+        async function savePerformance(e) {
             e.preventDefault();
             var form = e.target;
             var month = document.getElementById('performanceMonth').value;
@@ -3436,6 +3462,16 @@
                 performanceData[existingIndex] = performance;
             } else {
                 performanceData.push(performance);
+            }
+
+            // 直接保存到 Firestore
+            try {
+                await db.collection('performance').doc(String(performance.id)).set(performance);
+                console.log('绩效已保存到 Firestore:', month);
+            } catch (error) {
+                console.error('保存绩效到 Firestore 失败:', error);
+                showToast('保存失败，请检查网络连接', 'error');
+                return;
             }
 
             form.reset();
@@ -3541,7 +3577,7 @@
 
         // ==================== 其他功能 ====================
 
-        function addStudent(e) {
+        async function addStudent(e) {
             e.preventDefault();
             var form = e.target;
             var teacherId = parseInt(form.teacherId.value);
@@ -3553,8 +3589,9 @@
             }
 
             var now = new Date().toISOString().split('T')[0];
+            var newStudentId = students.length + 1;
             var newStudent = {
-                id: students.length + 1,
+                id: newStudentId,
                 name: form.name.value,
                 type: form.type.value,
                 school: form.school.value || '待补充',
@@ -3594,9 +3631,18 @@
                 }
             };
 
+            // 直接保存到 Firestore
+            try {
+                await db.collection('students').doc(String(newStudentId)).set(newStudent);
+                console.log('学生已保存到 Firestore:', newStudent.name);
+            } catch (error) {
+                console.error('保存学生到 Firestore 失败:', error);
+                showToast('保存失败，请检查网络连接', 'error');
+                return;
+            }
+
             students.push(newStudent);
             updateTeacherStats();
-            saveData();
             form.reset();
             renderPage();
             showToast('成功添加学生');
@@ -3707,6 +3753,10 @@
                     users = users.filter(u => !(u.role === 'teacher' && u.teacherId === deleteTarget.id));
                     updateTeacherStats();
                     saveData();
+                    
+                    // 同时删除 Firestore 中的老师文档
+                    deleteFromFirestore('teachers', deleteTarget.id);
+                    
                     showToast('已删除老师 "' + teacherName + '"');
                 }
             } else {
@@ -3716,6 +3766,10 @@
                     students.splice(studentIndex, 1);
                     updateTeacherStats();
                     saveData();
+                    
+                    // 同时删除 Firestore 中的学生文档
+                    deleteFromFirestore('students', deleteTarget.id);
+                    
                     showToast('已删除学生 "' + studentName + '"');
                 }
             }
