@@ -9,7 +9,32 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
-    <style>
+
+<!-- 在这行下面插入 Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<!-- 在这里插入配置 -->
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyDbH25uxfmhE3p26E2DsBhH2GHCocn_gZk",
+        authDomain: "management-system-81878.firebaseapp.com",
+        projectId: "management-system-81878",
+        storageBucket: "management-system-81878.firebasestorage.app",
+        messagingSenderId: "983889327107",
+        appId: "1:983889327107:web:9de13a1c1d022b303d4a36"
+    };
+
+    // 初始化 Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+</script>
+
+<style>
+<style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
         .card-hover { transition: all 0.2s; }
@@ -515,6 +540,78 @@
     <div id="toast" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 z-50 font-medium"></div>
 
     <script>
+        // ==================== Firebase 认证状态监听 ====================
+        
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                // 已登录，加载用户数据
+                try {
+                    const userDoc = await db.collection('users').doc(user.uid).get();
+                    if (userDoc.exists) {
+                        const userData = userDoc.data();
+                        currentUser = {
+                            uid: user.uid,
+                            email: user.email,
+                            name: userData.name,
+                            role: userData.role,
+                            teacherId: userData.teacherId || null
+                        };
+                        currentRole = userData.role;
+                        
+                        // 从云端加载数据
+                        await loadDataFromCloud();
+                        
+                        // 显示主界面
+                        document.getElementById('loginPage').classList.add('hidden');
+                        document.getElementById('mainApp').classList.remove('hidden');
+                        document.getElementById('currentUserName').textContent = userData.name;
+                        document.getElementById('currentUserRole').textContent = userData.role === 'manager' ? '管理者' : '老师';
+                        
+                        showToast('欢迎回来，' + userData.name);
+                    } else {
+                        showToast('用户资料不存在', 'error');
+                        await auth.signOut();
+                    }
+                } catch (error) {
+                    console.error('加载失败:', error);
+                    showToast('数据加载失败', 'error');
+                }
+            } else {
+                // 未登录，显示登录页
+                document.getElementById('mainApp').classList.add('hidden');
+                document.getElementById('loginPage').classList.remove('hidden');
+                loadSavedLoginInfo();
+            }
+        });
+
+        // 从云端加载数据
+        async function loadDataFromCloud() {
+            try {
+                // 加载老师列表
+                const teachersSnapshot = await db.collection('teachers').get();
+                teachers = teachersSnapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+                
+                // 加载学生列表（老师只能看自己的）
+                let studentsQuery = db.collection('students');
+                if (currentRole === 'teacher') {
+                    studentsQuery = studentsQuery.where('teacherId', '==', currentUser.teacherId);
+                }
+                const studentsSnapshot = await studentsQuery.get();
+                students = studentsSnapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+                
+                // 加载绩效数据
+                const perfSnapshot = await db.collection('performance').get();
+                performanceData = perfSnapshot.docs.map(doc => doc.data());
+                
+                updateTeacherStats();
+                renderSidebar();
+                renderPage();
+            } catch (error) {
+                console.error('云端加载失败:', error);
+                showToast('数据同步失败', 'error');
+            }
+        }
+
         // ==================== 数据存储 ====================
 
         var users = [
