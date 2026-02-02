@@ -918,68 +918,37 @@
 
         // ==================== 登录认证（已修复）====================
 
-        function login(role) {
-            var username = document.getElementById('loginUsername').value.trim();
-            var password = document.getElementById('loginPassword').value.trim();
-            var rememberMe = document.getElementById('rememberMe').checked;
+        async function login(role) {
+    var email = document.getElementById('loginUsername').value.trim();
+    var password = document.getElementById('loginPassword').value.trim();
 
-            if (!username || !password) {
-                showToast('请输入账号和密码', 'error');
-                return;
+    if (!email || !password) {
+        showToast('请输入邮箱和密码', 'error');
+        return;
+    }
+
+    try {
+        await auth.signInWithEmailAndPassword(email, password);
+        // 登录成功后的逻辑由 onAuthStateChanged 处理
+    } catch (error) {
+        let errorMsg = '登录失败';
+        if (error.code === 'auth/user-not-found') errorMsg = '用户不存在';
+        else if (error.code === 'auth/wrong-password') errorMsg = '密码错误';
+        else if (error.code === 'auth/invalid-email') errorMsg = '邮箱格式不正确';
+        else if (error.code === 'auth/invalid-credential') errorMsg = '邮箱或密码错误';
+
+        showToast(errorMsg, 'error');
+    }
+}
+
+        async function logout() {
+            try {
+                await auth.signOut();
+                // 登出成功后的逻辑由 onAuthStateChanged 处理
+            } catch (error) {
+                console.error('登出失败:', error);
+                showToast('登出失败', 'error');
             }
-
-            // 先查找账号是否存在且密码正确
-            var user = users.find(u => u.username === username && u.password === password);
-            
-            if (!user) {
-                showToast('账号或密码错误', 'error');
-                if (rememberMe) {
-                    clearSavedLoginInfo();
-                    document.getElementById('rememberMe').checked = false;
-                }
-                return;
-            }
-
-            // 检查角色是否匹配
-            if (user.role !== role) {
-                var correctRole = user.role === 'manager' ? '管理者登录' : '老师登录';
-                showToast('请使用"' + correctRole + '"按钮登录', 'error');
-                return;
-            }
-
-            currentUser = user;
-            currentRole = role;
-            currentPage = 'dashboard';
-            currentTeacherFilter = 'all';
-            currentStatusFilter = 'all';
-            currentPageNum = 1;
-            selectedStudents = [];
-
-            document.getElementById('loginPage').classList.add('hidden');
-            document.getElementById('mainApp').classList.remove('hidden');
-            document.getElementById('currentUserName').textContent = user.name;
-            document.getElementById('currentUserRole').textContent = role === 'manager' ? '管理者' : '老师';
-            
-            // 重置筛选
-            currentEnrollmentFilter = '';
-            currentContractFilter = 'all';
-
-            // 保存登录信息
-            saveLoginInfo(username, password, rememberMe);
-
-            renderSidebar();
-            renderPage();
-            showToast('欢迎回来，' + user.name);
-        }
-
-        function logout() {
-            currentUser = null;
-            currentRole = 'manager';
-            document.getElementById('mainApp').classList.add('hidden');
-            document.getElementById('loginPage').classList.remove('hidden');
-            document.getElementById('loginUsername').value = '';
-            document.getElementById('loginPassword').value = '';
-            showToast('已退出登录');
         }
 
         // ==================== 页面渲染 ====================
