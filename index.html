@@ -14,7 +14,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
 <!-- 在这里插入配置 -->
 <script>
@@ -28,9 +27,20 @@
     };
 
     // 初始化 Firebase
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
+    try {
+        firebase.initializeApp(firebaseConfig);
+        console.log('Firebase 初始化成功');
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        console.log('auth 和 db 对象已创建');
+        
+        // 添加到全局作用域
+        window.auth = auth;
+        window.db = db;
+    } catch (error) {
+        console.error('Firebase 初始化失败:', error);
+        alert('Firebase 初始化失败，请检查控制台错误信息');
+    }
 </script>
 
 <style>
@@ -543,12 +553,16 @@
         // ==================== Firebase 认证状态监听 ====================
         
         auth.onAuthStateChanged(async (user) => {
+            console.log('Auth 状态变化:', user ? '已登录' : '未登录');
             if (user) {
+                console.log('用户信息:', user.uid, user.email);
                 // 已登录，加载用户数据
                 try {
                     const userDoc = await db.collection('users').doc(user.uid).get();
+                    console.log('用户文档查询结果:', userDoc.exists);
                     if (userDoc.exists) {
                         const userData = userDoc.data();
+                        console.log('用户数据:', userData);
                         currentUser = {
                             uid: user.uid,
                             email: user.email,
@@ -569,6 +583,7 @@
                         
                         showToast('欢迎回来，' + userData.name);
                     } else {
+                        console.error('用户文档不存在');
                         showToast('用户资料不存在', 'error');
                         await auth.signOut();
                     }
@@ -577,6 +592,7 @@
                     showToast('数据加载失败', 'error');
                 }
             } else {
+                console.log('显示登录页');
                 // 未登录，显示登录页
                 document.getElementById('mainApp').classList.add('hidden');
                 document.getElementById('loginPage').classList.remove('hidden');
@@ -609,6 +625,38 @@
             } catch (error) {
                 console.error('云端加载失败:', error);
                 showToast('数据同步失败', 'error');
+            }
+        }
+
+        // 保存数据到云端
+        async function saveDataToCloud() {
+            if (!currentUser || !currentUser.uid) {
+                console.log('未登录，跳过云端保存');
+                return;
+            }
+
+            try {
+                console.log('开始保存数据到云端...');
+
+                // 保存老师列表
+                for (const teacher of teachers) {
+                    await db.collection('teachers').doc(String(teacher.id)).set(teacher);
+                }
+
+                // 保存学生列表
+                for (const student of students) {
+                    await db.collection('students').doc(String(student.id)).set(student);
+                }
+
+                // 保存绩效数据
+                for (const perf of performanceData) {
+                    await db.collection('performance').doc(perf.id || Date.now().toString()).set(perf);
+                }
+
+                console.log('数据保存到云端成功');
+            } catch (error) {
+                console.error('云端保存失败:', error);
+                // 不显示错误提示，避免频繁打扰用户
             }
         }
 
@@ -735,7 +783,7 @@
                         major: majors[i % 7],
                         gpa: (3.0 + Math.random() * 1.0).toFixed(2),
                         teacherId: teacherId,
-                        teacherName: teacher.name,
+                        teacherName: teacher ? teacher.name : '未分配',
                         status: statuses[i % 3],
                         targetDegree: degrees[i % 2],
                         contractType: contractTypes[i % 6],
@@ -778,6 +826,9 @@
                 localStorage.setItem('system_users', JSON.stringify(users));
                 localStorage.setItem('system_teachers', JSON.stringify(teachers));
                 localStorage.setItem('system_students', JSON.stringify(students));
+                
+                // 同时保存到云端
+                saveDataToCloud();
             } catch (e) {
                 console.error('保存数据失败:', e);
             }
@@ -832,6 +883,25 @@
         window.addEventListener('load', function() {
             setTimeout(checkCDNResources, 1000);
         });
+
+        // 页面关闭前自动保存数据到云端
+        window.addEventListener('beforeunload', function(e) {
+            if (currentUser && currentUser.uid) {
+                console.log('页面关闭，尝试保存数据到云端...');
+                // 使用 localStorage 作为备份
+                localStorage.setItem('system_teachers', JSON.stringify(teachers));
+                localStorage.setItem('system_students', JSON.stringify(students));
+                localStorage.setItem('system_performance', JSON.stringify(performanceData));
+            }
+        });
+
+        // 定期自动保存到云端（每5分钟）
+        setInterval(function() {
+            if (currentUser && currentUser.uid) {
+                console.log('定期保存数据到云端...');
+                saveDataToCloud();
+            }
+        }, 5 * 60 * 1000);
 
         // ==================== 筛选功能 ====================
         
@@ -922,20 +992,26 @@
     var email = document.getElementById('loginUsername').value.trim();
     var password = document.getElementById('loginPassword').value.trim();
 
+    console.log('开始登录，邮箱:', email, '角色:', role);
+
     if (!email || !password) {
         showToast('请输入邮箱和密码', 'error');
         return;
     }
 
     try {
+        console.log('调用 Firebase 登录...');
         await auth.signInWithEmailAndPassword(email, password);
+        console.log('Firebase 登录成功');
         // 登录成功后的逻辑由 onAuthStateChanged 处理
     } catch (error) {
+        console.error('Firebase 登录失败:', error.code, error.message);
         let errorMsg = '登录失败';
         if (error.code === 'auth/user-not-found') errorMsg = '用户不存在';
         else if (error.code === 'auth/wrong-password') errorMsg = '密码错误';
         else if (error.code === 'auth/invalid-email') errorMsg = '邮箱格式不正确';
         else if (error.code === 'auth/invalid-credential') errorMsg = '邮箱或密码错误';
+        else errorMsg = '登录失败: ' + error.message;
 
         showToast(errorMsg, 'error');
     }
@@ -943,6 +1019,10 @@
 
         async function logout() {
             try {
+                // 退出前保存所有数据到云端
+                console.log('退出登录，保存数据到云端...');
+                await saveDataToCloud();
+                
                 await auth.signOut();
                 // 登出成功后的逻辑由 onAuthStateChanged 处理
             } catch (error) {
