@@ -550,6 +550,10 @@
     <div id="toast" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 z-50 font-medium"></div>
 
     <script>
+        // 从全局作用域获取 Firebase 对象
+        const auth = window.auth;
+        const db = window.db;
+
         // ==================== Firebase 认证状态监听 ====================
         
         auth.onAuthStateChanged(async (user) => {
