@@ -703,7 +703,7 @@
                     }
 
                     for (const perf of performanceData) {
-                        await db.collection('performance').doc(perf.id || Date.now().toString()).set(perf);
+                        await db.collection('performance').doc(String(perf.id || Date.now())).set(perf);
                     }
                 }
 
