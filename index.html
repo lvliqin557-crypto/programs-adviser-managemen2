@@ -624,16 +624,33 @@
                 
                 // 加载学生列表（老师只能看自己的）
                 let studentsQuery = db.collection('students');
+                console.log('当前角色:', currentRole, '准备查询学生数据');
+                console.log('currentUser:', currentUser);
                 if (currentRole === 'teacher') {
+                    console.log('教师模式，添加过滤条件: teacherId =', currentUser.teacherId);
                     studentsQuery = studentsQuery.where('teacherId', '==', currentUser.teacherId);
+                } else {
+                    console.log('管理者模式，查询所有学生（包括teacherId为null的）');
                 }
                 const studentsSnapshot = await studentsQuery.get();
-                const cloudStudents = studentsSnapshot.docs.map(doc => ({ id: parseInt(doc.id), ...doc.data() }));
+                console.log('Firestore 查询返回的学生数量:', studentsSnapshot.docs.length);
+                const cloudStudents = studentsSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    // 保留 Firestore 文档 ID 作为 firestoreId
+                    data.firestoreId = doc.id;
+                    // 如果数据中没有本地 id，则使用 Firestore 文档 ID 的后缀或生成新的
+                    if (!data.id) {
+                        data.id = parseInt(doc.id.slice(-8), 36) || Math.floor(Math.random() * 1000000);
+                    }
+                    console.log('加载学生:', { id: data.id, name: data.name, teacherId: data.teacherId, firestoreId: data.firestoreId });
+                    return data;
+                });
                 
                 // 如果云端有数据，使用云端数据；否则保留本地数据
                 if (cloudStudents.length > 0) {
                     students = cloudStudents;
                     console.log('从云端加载了', cloudStudents.length, '个学生');
+                    console.log('学生列表:', students.map(s => ({ id: s.id, name: s.name, teacherId: s.teacherId })));
                 } else {
                     console.log('云端没有学生数据，保留本地数据');
                 }
@@ -676,8 +693,10 @@
                     if (dataType === 'student') {
                         var student = students.find(s => s.id === dataId);
                         if (student) {
-                            await db.collection('students').doc(String(dataId)).set(student);
-                            console.log('学生数据保存成功:', dataId);
+                            // 使用 firestoreId 作为 Firestore 文档 ID
+                            var docId = student.firestoreId || String(dataId);
+                            await db.collection('students').doc(docId).set(student);
+                            console.log('学生数据保存成功:', dataId, 'Firestore ID:', docId);
                         }
                     } else if (dataType === 'teacher') {
                         var teacher = teachers.find(t => t.id === dataId);
@@ -699,7 +718,9 @@
                     }
 
                     for (const student of students) {
-                        await db.collection('students').doc(String(student.id)).set(student);
+                        // 使用 firestoreId 作为 Firestore 文档 ID
+                        var docId = student.firestoreId || String(student.id);
+                        await db.collection('students').doc(docId).set(student);
                     }
 
                     for (const perf of performanceData) {
@@ -715,15 +736,29 @@
         }
 
         // 从 Firestore 删除文档
-        async function deleteFromFirestore(collectionName, id) {
+        async function deleteFromFirestore(collectionName, id, firestoreId = null) {
             if (!currentUser || !currentUser.uid) {
                 console.log('未登录，跳过 Firestore 删除');
                 return;
             }
 
             try {
-                console.log('从 Firestore 删除', collectionName, '文档:', id);
-                await db.collection(collectionName).doc(String(id)).delete();
+                var docId = String(id);
+                // 如果是学生集合，优先使用传入的 firestoreId 或从 students 数组中查找
+                if (collectionName === 'students') {
+                    if (firestoreId) {
+                        docId = firestoreId;
+                        console.log('使用传入的 firestoreId:', firestoreId);
+                    } else {
+                        var student = students.find(s => s.id === id);
+                        if (student && student.firestoreId) {
+                            docId = student.firestoreId;
+                            console.log('从 students 数组找到 firestoreId:', firestoreId);
+                        }
+                    }
+                }
+                console.log('从 Firestore 删除', collectionName, '文档:', id, 'Firestore ID:', docId);
+                await db.collection(collectionName).doc(docId).delete();
                 console.log('Firestore 删除成功:', collectionName, id);
             } catch (error) {
                 console.error('Firestore 删除失败:', error);
@@ -1414,14 +1449,14 @@
 
         // ==================== Excel导入功能 ====================
 
-        function handleExcelImport(input) {
+        async function handleExcelImport(input) {
             var file = input.files[0];
             if (!file) return;
 
             console.log('开始导入Excel文件:', file.name);
 
             var reader = new FileReader();
-            reader.onload = function(e) {
+            reader.onload = async function(e) {
                 try {
                     var data = new Uint8Array(e.target.result);
                     var workbook = XLSX.read(data, {type: 'array'});
@@ -1432,13 +1467,13 @@
                     
                     if (jsonData.length > 0) {
                         var successCount = 0;
-                        jsonData.forEach(row => {
+                        for (const row of jsonData) {
                             var teacherName = row['中期顾问'] || row['负责老师'] || row['老师'] || '张老师';
                             var teacher = teachers.find(t => t.name === teacherName);
                             
                             if (!teacher) {
                                 console.warn('未找到老师:', teacherName, '，跳过该学生');
-                                return;
+                                continue;
                             }
                             
                             var newStudent = {
@@ -1486,10 +1521,20 @@
                                     images: []
                                 }
                             };
+                            
+                            // 使用 Firestore addDoc 自动生成唯一 ID
+                            try {
+                                const docRef = await db.collection('students').add(newStudent);
+                                newStudent.firestoreId = docRef.id;
+                                console.log('学生已保存到 Firestore:', newStudent.name, 'Firestore ID:', docRef.id);
+                            } catch (error) {
+                                console.error('保存学生到 Firestore 失败:', error);
+                                continue;
+                            }
+                            
                             students.push(newStudent);
-                            saveData('student', newStudent.id);
                             successCount++;
-                        });
+                        }
                         
                         updateTeacherStats();
                         renderPage();
@@ -1788,8 +1833,28 @@
 
         async function confirmBatchDelete() {
             var count = 0;
+            var studentsToDelete = [];
+            
+            // 先收集要删除的学生及其 firestoreId
             selectedStudents.forEach(id => {
-                var index = students.findIndex(s => s.id === id);
+                var student = students.find(s => s.id === id);
+                if (student) {
+                    studentsToDelete.push({
+                        id: id,
+                        firestoreId: student.firestoreId
+                    });
+                }
+            });
+            
+            // 从 Firestore 删除这些学生
+            var deletePromises = studentsToDelete.map(s => 
+                deleteFromFirestore('students', s.id, s.firestoreId)
+            );
+            await Promise.all(deletePromises);
+            
+            // 再从本地数组中删除
+            studentsToDelete.forEach(s => {
+                var index = students.findIndex(st => st.id === s.id);
                 if (index > -1) {
                     students.splice(index, 1);
                     count++;
@@ -1797,10 +1862,6 @@
             });
 
             updateTeacherStats();
-            
-            // 同时从 Firestore 删除这些学生（等待所有删除完成）
-            var deletePromises = selectedStudents.map(id => deleteFromFirestore('students', id));
-            await Promise.all(deletePromises);
             
             selectedStudents = [];
             closeBatchDelete();
@@ -3780,10 +3841,11 @@
                 }
             };
 
-            // 直接保存到 Firestore
+            // 使用 Firestore addDoc 自动生成唯一 ID
             try {
-                await db.collection('students').doc(String(newStudentId)).set(newStudent);
-                console.log('学生已保存到 Firestore:', newStudent.name);
+                const docRef = await db.collection('students').add(newStudent);
+                newStudent.firestoreId = docRef.id;
+                console.log('学生已保存到 Firestore:', newStudent.name, 'Firestore ID:', docRef.id);
             } catch (error) {
                 console.error('保存学生到 Firestore 失败:', error);
                 showToast('保存失败，请检查网络连接', 'error');
@@ -3919,11 +3981,14 @@
                 var studentIndex = students.findIndex(s => s.id === deleteTarget.id);
                 if (studentIndex > -1) {
                     var studentName = students[studentIndex].name;
+                    var student = students[studentIndex];
+                    
+                    // 先删除 Firestore 中的学生文档（需要先获取 firestoreId）
+                    deleteFromFirestore('students', deleteTarget.id, student.firestoreId);
+                    
+                    // 再从本地数组中删除
                     students.splice(studentIndex, 1);
                     updateTeacherStats();
-                    
-                    // 同时删除 Firestore 中的学生文档
-                    deleteFromFirestore('students', deleteTarget.id);
                     
                     showToast('已删除学生 "' + studentName + '"');
                 }
