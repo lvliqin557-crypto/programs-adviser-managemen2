@@ -804,6 +804,16 @@
         var statuses = ['规划中', '申请中', '已录取', '已退回'];
         var countries = ['美国', '英国', '加拿大', '澳大利亚', '新加坡', '香港'];
 
+        function generateUniqueStudentId() {
+            var maxId = 0;
+            students.forEach(function(s) {
+                if (s.id > maxId) {
+                    maxId = s.id;
+                }
+            });
+            return maxId + 1;
+        }
+
         // 绩效数据存储
         var performanceData = [];
 
@@ -1477,7 +1487,7 @@
                             }
                             
                             var newStudent = {
-                                id: students.length + 1,
+                                id: generateUniqueStudentId(),
                                 name: row['姓名'] || row['学生姓名'] || '未命名',
                                 type: row['类型'] || '本科生',
                                 school: row['学校'] || '待补充',
@@ -3798,7 +3808,7 @@
             }
 
             var now = new Date().toISOString().split('T')[0];
-            var newStudentId = students.length + 1;
+            var newStudentId = generateUniqueStudentId();
             var newStudent = {
                 id: newStudentId,
                 name: form.name.value,
