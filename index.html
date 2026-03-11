@@ -1534,9 +1534,10 @@
                             
                             // 使用 Firestore addDoc 自动生成唯一 ID
                             try {
+                                // 确保 newStudent.id 已经设置，这样 Firestore 文档中会包含本地 id
                                 const docRef = await db.collection('students').add(newStudent);
                                 newStudent.firestoreId = docRef.id;
-                                console.log('学生已保存到 Firestore:', newStudent.name, 'Firestore ID:', docRef.id);
+                                console.log('学生已保存到 Firestore:', newStudent.name, '本地 ID:', newStudent.id, 'Firestore ID:', docRef.id);
                             } catch (error) {
                                 console.error('保存学生到 Firestore 失败:', error);
                                 continue;
@@ -3853,9 +3854,10 @@
 
             // 使用 Firestore addDoc 自动生成唯一 ID
             try {
+                // 确保 newStudent.id 已经设置，这样 Firestore 文档中会包含本地 id
                 const docRef = await db.collection('students').add(newStudent);
                 newStudent.firestoreId = docRef.id;
-                console.log('学生已保存到 Firestore:', newStudent.name, 'Firestore ID:', docRef.id);
+                console.log('学生已保存到 Firestore:', newStudent.name, '本地 ID:', newStudent.id, 'Firestore ID:', docRef.id);
             } catch (error) {
                 console.error('保存学生到 Firestore 失败:', error);
                 showToast('保存失败，请检查网络连接', 'error');
